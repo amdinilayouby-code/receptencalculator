@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Receptencalculator</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 900px; margin: 0 auto; padding: 16px; line-height: 1.45; color: #222; }
+  h1 { margin-bottom: 4px; }
+  fieldset { margin: 14px 0; border: 1px solid #cfd6dd; border-radius: 10px; padding: 14px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  .veld { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 6px 0; }
+  .veld input[type=number] { width: 110px; padding: 6px; font-size: 16px; }
+  .ingredienten { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+  .ingredienten label { display: flex; gap: 6px; align-items: center; }
+  button { padding: 12px 22px; font-size: 17px; background: #1565c0; color: #fff; border: 0; border-radius: 8px; cursor: pointer; }
+  button:hover { background: #0d47a1; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 18px; }
+  th, td { border-bottom: 1px solid #e3e7eb; padding: 7px 6px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .melding { padding: 12px; border-radius: 8px; margin: 12px 0; }
+  .waarschuwing { background: #fff3cd; }
+  .goed { background: #d1e7dd; }
+  .fout { background: #f8d7da; }
+  .klein { color: #555; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>Receptencalculator</h1>
+<p class="klein">Vul je gewenste samenstelling in, kies welke ingrediënten je wil gebruiken en klik op <strong>Bereken recept</strong>. Het programma berekent hoeveel gram van elk ingrediënt je nodig hebt.</p>
+
+<fieldset>
+  <legend>1. Gewenste samenstelling (in %)</legend>
+  <div class="veld"><label for="suiker">Suiker %</label><input type="number" id="suiker" step="0.1" value="12"></div>
+  <div class="veld"><label for="vet">Vet %</label><input type="number" id="vet" step="0.1" value="4.2"></div>
+  <div class="veld"><label for="vvmb">VVMB %</label><input type="number" id="vvmb" step="0.1" value="4.3"></div>
+  <div class="veld"><label for="overig">Overige droge stof %</label><input type="number" id="overig" step="0.01" value="0.1"></div>
+</fieldset>
+
+<fieldset>
+  <legend>2. Gewenste PAC en POD</legend>
+  <div class="veld"><label for="pac">PAC-waarde</label><input type="number" id="pac" step="0.01" value="2.5"></div>
+  <div class="veld"><label for="pod">POD-waarde</label><input type="number" id="pod" step="0.01" value="0.49"></div>
+  <p class="klein">PAC en POD worden berekend op dezelfde schaal als in de tabel uit de les.</p>
+</fieldset>
+
+<fieldset>
+  <legend>3. Hoeveelheid</legend>
+  <div class="veld"><label for="batch">Totaal gewicht van het recept (gram)</label><input type="number" id="batch" step="10" value="1000"></div>
+</fieldset>
+
+<fieldset>
+  <legend>4. Ingrediënten die mogen gebruikt worden</legend>
+  <div class="ingredienten" id="ingredienten"></div>
+  <p class="klein">Kies er minstens 7 voor de beste resultaten. Het programma haalt een ingrediënt uit het recept als het een negatieve hoeveelheid zou krijgen.</p>
+</fieldset>
+
+<button type="button" id="bereken">Bereken recept</button>
+
+<div id="resultaat"></div>
+
+<script>
+// Gegevens uit de tabel van de les.
+// Kolommen: naam, suiker %, vet %, VVMB %, overige droge stof %, PAC, POD
+// (alle %-waarden per 100 g van het ingrediënt)
+const INGREDIENTEN = [
+  ["Water",                      0,    0,    0,    0,   0,      0],
+  ["Volle melk (3,5%)",          0,    3.5,  9,    0,   4.905,  0.7848],
+  ["Halfvolle melk (1,8%)",      0,    1.8,  9,    0,   4.905,  0.7848],
+  ["Magere melk",                0,    0.2,  9,    0,   4.905,  0.7848],
+  ["Melkpoeder (vol)",           0,    26,   70,   0,   38.15,  6.104],
+  ["Magere melkpoeder",          0,    1,    95,   0,   51.775, 8.284],
+  ["Room 35%",                   0,    35,   5.8,  0,   3.161,  0.50576],
+  ["Room 38%",                   0,    38,   5.6,  0,   3.052,  0.48832],
+  ["Boter",                      0,    84,   0,    0,   0,      0],
+  ["Gecondenseerde melk",        43,   9,    24,   0,   13.08,  2.0928],
+  ["Verdampte melk",             0,    8.5,  21,   0,   11.445, 1.8312],
+  ["Volle yoghurt",              0,    4,    9.5,  0,   5.1775, 0.8284],
+  ["Suiker",                     100,  0,    0,    0,   1,      1],
+  ["Dextrose",                   92,   0,    0,    0,   1.9,    0.7],
+  ["Glucosepasta",               81,   0,    0,    0,   0.65,   0.3],
+  ["Invertsuiker",               75,   0,    0,    0,   1.9,    1.3],
+  ["Honing",                     80,   0,    0,    0,   1.9,    0.75],
+  ["Maltodextrine",              96,   0,    0,    0,   0.19,   0.11],
+  ["Inuline",                    7,    0,    0,    90,  0.9,    0.45],
+  ["Ei",                         0,    14,   0,    11,  0,      0],
+  ["Chocolade 70%",              30,   40,   0,    30,  0,      0],
+  ["Hazelnootpasta",             0,    65,   35,   0,   19.075, 3.052],
+  ["Aardbei",                    8,    0,    0,    7,   0.08,   0.08],
+  ["Framboos",                   7,    0,    0,    7,   0.07,   0.07],
+  ["Banaan",                     14,   0,    0,    9,   0.14,   0.14],
+  ["Mango",                      13,   0,    0,    8,   0.13,   0.13],
+  ["Citroen",                    5,    0,    0,    8,   0.05,   0.05],
+  ["Kiwi",                       7,    0,    0,    3,   0.07,   0.07],
+  ["Perzik",                     9,    0,    0,    9,   0.09,   0.09],
+  ["Braambes",                   6,    0,    0,    9,   0.06,   0.06]
+];
+
+// Standaard gekozen ingrediënten (7 stuks, dan is er een exacte oplossing)
+const STANDAARD = ["Water", "Volle melk (3,5%)", "Room 35%", "Suiker", "Magere melkpoeder", "Dextrose", "Aardbei"];
+
+// Kleinste kwadraten: zoekt w zodat A·w zo dicht mogelijk bij y ligt (Gauss-Jordan op de normaalvergelijkingen)
+function kleinsteKwadraten(A, y) {
+  const n = A[0].length;
+  const M = Array.from({ length: n }, () => Array(n + 1).fill(0));
+  for (let r = 0; r < A.length; r++) {
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) M[i][j] += A[r][i] * A[r][j];
+      M[i][n] += A[r][i] * y[r];
+    }
+  }
+  for (let i = 0; i < n; i++) M[i][i] += 1e-10; // klein extra getal, zodat het altijd oplosbaar is
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((row, i) => row[n] / row[i]);
+}
+
+// Berekent de hoeveelheid (in %) van elk gekozen ingrediënt.
+// Ingrediënten met een negatieve uitkomst worden weggelaten en de berekening wordt herhaald.
+function berekenRecept(gekozen, doel) {
+  let actief = gekozen.map(i => INGREDIENTEN.findIndex(r => r[0] === i));
+  const vervallen = [];
+  while (actief.length > 0) {
+    const A = [], y = [];
+    const voegToe = (coefs, t) => {
+      const s = Math.max(Math.abs(t), 1);
+      A.push(coefs.map(c => c / s));
+      y.push(t / s);
+    };
+    voegToe(actief.map(i => INGREDIENTEN[i][1]), 100 * doel.suiker);
+    voegToe(actief.map(i => INGREDIENTEN[i][2]), 100 * doel.vet);
+    voegToe(actief.map(i => INGREDIENTEN[i][3]), 100 * doel.vvmb);
+    voegToe(actief.map(i => INGREDIENTEN[i][4]), 100 * doel.overig);
+    voegToe(actief.map(i => INGREDIENTEN[i][5]), 100 * doel.pac);
+    voegToe(actief.map(i => INGREDIENTEN[i][6]), 100 * doel.pod);
+    voegToe(actief.map(() => 1), 100); // samen moet het 100% zijn
+
+    const w = kleinsteKwadraten(A, y);
+    let slechtste = -1;
+    w.forEach((v, k) => { if (v < -1e-9 && (slechtste < 0 || v < w[slechtste])) slechtste = k; });
+    if (slechtste < 0) {
+      return { w: actief.map((i, k) => ({ naam: INGREDIENTEN[i][0], pct: w[k], idx: i })), vervallen };
+    }
+    vervallen.push(INGREDIENTEN[actief[slechtste]][0]);
+    actief.splice(slechtste, 1);
+  }
+  return null;
+}
+
+function fmt(x, d = 2) {
+  return x.toFixed(d).replace(".", ",");
+}
+
+// Bouw de keuzelijst met ingrediënten
+const ingrediëntenDiv = document.getElementById("ingredienten");
+INGREDIENTEN.forEach(r => {
+  const lab = document.createElement("label");
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.value = r[0];
+  cb.checked = STANDAARD.includes(r[0]);
+  lab.appendChild(cb);
+  lab.appendChild(document.createTextNode(r[0]));
+  ingrediëntenDiv.appendChild(lab);
+});
+
+function lees(id) {
+  return parseFloat(document.getElementById(id).value.replace(",", "."));
+}
+
+document.getElementById("bereken").addEventListener("click", () => {
+  const uitvoer = document.getElementById("resultaat");
+  const doel = {
+    suiker: lees("suiker"), vet: lees("vet"), vvmb: lees("vvmb"), overig: lees("overig"),
+    pac: lees("pac"), pod: lees("pod")
+  };
+  const batch = lees("batch");
+  const gekozen = [...ingrediëntenDiv.querySelectorAll("input:checked")].map(cb => cb.value);
+
+  if (Object.values(doel).some(v => isNaN(v)) || isNaN(batch)) {
+    uitvoer.innerHTML = '<div class="melding fout">Vul alle velden in met een getal.</div>';
+    return;
+  }
+  if (gekozen.length === 0) {
+    uitvoer.innerHTML = '<div class="melding fout">Kies minstens één ingrediënt.</div>';
+    return;
+  }
+
+  const res = berekenRecept(gekozen, doel);
+  if (!res) {
+    uitvoer.innerHTML = '<div class="melding fout">Met deze ingrediënten is geen recept mogelijk. Kies andere ingrediënten.</div>';
+    return;
+  }
+
+  // Behaalde waarden berekenen
+  const som = (kolom) => res.w.reduce((s, r) => s + r.pct * INGREDIENTEN[r.idx][kolom] / 100, 0);
+  const behaald = {
+    suiker: som(1), vet: som(2), vvmb: som(3), overig: som(4), pac: som(5), pod: som(6)
+  };
+  const labels = {
+    suiker: ["Suiker %", 2], vet: ["Vet %", 2], vvmb: ["VVMB %", 2], overig: ["Overige droge stof %", 2],
+    pac: ["PAC", 3], pod: ["POD", 3]
+  };
+
+  // Maximale afwijking (relatief voor PAC/POD, absoluut in %-punt voor de rest)
+  let maxAfwijking = 0;
+  for (const k of Object.keys(doel)) {
+    const verschil = Math.abs(behaald[k] - doel[k]);
+    const maat = (k === "pac" || k === "pod") ? verschil / Math.max(Math.abs(doel[k]), 0.01) : verschil;
+    maxAfwijking = Math.max(maxAfwijking, maat);
+  }
+
+  let html = "";
+  if (res.vervallen.length) {
+    html += `<div class="melding waarschuwing">Niet gebruikt omdat de hoeveelheid negatief zou worden: <strong>${res.vervallen.join(", ")}</strong>. Voeg andere ingrediënten toe voor een betere oplossing.</div>`;
+  }
+  if (maxAfwijking < 0.01) {
+    html += `<div class="melding goed">Het recept haalt alle gewenste waarden.</div>`;
+  } else if (maxAfwijking < 0.05) {
+    html += `<div class="melding waarschuwing">Het recept komt dicht in de buurt van de gewenste waarden.</div>`;
+  } else {
+    html += `<div class="melding fout">Deze combinatie kan de gewenste waarden niet goed halen. Probeer andere ingrediënten of andere doelen.</div>`;
+  }
+
+  // Receptentabel, van grootste naar kleinste hoeveelheid
+  const rijen = [...res.w].sort((a, b) => b.pct - a.pct);
+  html += `<h2>Recept voor ${fmt(batch, 0)} gram</h2>
+  <table><tr><th>Ingrediënt</th><th>Percentage</th><th>Gram</th></tr>`;
+  rijen.forEach(r => {
+    html += `<tr><td>${r.naam}</td><td>${fmt(r.pct, 2)} %</td><td>${fmt(r.pct / 100 * batch, 1)} g</td></tr>`;
+  });
+  html += `<tr><td><strong>Totaal</strong></td><td>100,00 %</td><td>${fmt(batch, 1)} g</td></tr></table>`;
+
+  // Controletabel
+  html += `<h2>Controle</h2>
+  <table><tr><th>Eigenschap</th><th>Gewenst</th><th>Behaald</th></tr>`;
+  for (const k of ["suiker", "vet", "vvmb", "overig", "pac", "pod"]) {
+    html += `<tr><td>${labels[k][0]}</td><td>${fmt(doel[k], labels[k][1])}</td><td>${fmt(behaald[k], labels[k][1])}</td></tr>`;
+  }
+  html += `</table>`;
+
+  uitvoer.innerHTML = html;
+});
+</script>
+</body>
+</html>
